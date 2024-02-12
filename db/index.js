@@ -9,17 +9,17 @@ const client = new Client({
  * USER Methods
  */
 
-async function createUser({ 
-  username, 
+async function createUser({
+  username,
   password,
   name,
   location
 }) {
   try {
     const { rows: [ user ] } = await client.query(`
-      INSERT INTO users(username, password, name) 
-      VALUES($1, $2, $3) 
-      ON CONFLICT (username) DO NOTHING 
+      INSERT INTO users(username, password, name, location)
+      VALUES($1, $2, $3, $4)
+      ON CONFLICT (username) DO NOTHING
       RETURNING *;
     `, [username, password, name, location]);
 
@@ -31,25 +31,33 @@ async function createUser({
 
 async function updateUser(id, fields = {}) {
   // build the set string
+  console.log("attempting to update user with ID", id, "and fields", fields);
   const setString = Object.keys(fields).map(
-    (key, index) => `"${ key }"=$${ index + 1 }`
+    (key, index) => `"${ key }"=$${ index + 2 }`
   ).join(', ');
 
   // return early if this is called without fields
   if (setString.length === 0) {
-    return;
+    throw new Error("No update fields provided");
   }
 
+  const values = Object.values(fields);
+
   try {
+    console.log(`SQL Query: UPDATE users SET ${setString} WHERE id=$1 RETURNING *;`);
+    console.log("Values:", [id, ...values]);
+
     const { rows: [ user ] } = await client.query(`
       UPDATE users
-      SET ${ setString }
-      WHERE id=${ id }
+      SET ${setString}
+      WHERE id=$1
       RETURNING *;
-    `, Object.values(fields));
+    `, [id, ...values]);
+    console.log("Updated user:", user);
 
     return user;
   } catch (error) {
+    console.error("Error updating user with ID:", id, error);
     throw error;
   }
 }
@@ -72,8 +80,8 @@ async function getUserById(userId) {
     const { rows: [ user ] } = await client.query(`
       SELECT id, username, name, location, active
       FROM users
-      WHERE id=${ userId }
-    `);
+      WHERE id = $1
+      `, [userId]);
 
     if (!user) {
       throw {
@@ -92,22 +100,44 @@ async function getUserById(userId) {
 
 async function getUserByUsername(username) {
   try {
-    const { rows: [ user ] } = await client.query(`
+    const { rows } = await client.query(`
       SELECT *
       FROM users
       WHERE username=$1
     `, [ username ]);
-
+    if (!rows || !rows.length) return null;
+    const [ user ] = rows;
     if (!user) {
       throw {
         name: "UserNotFoundError",
         message: "A user with that username does not exist"
       }
     }
-
     return user;
   } catch (error) {
     throw error;
+  }
+}
+
+async function deleteUserById(userId) {
+
+  try {
+      const userCheck = await client.query(`
+          SELECT * FROM users WHERE id=$1;
+      `, [userId]);
+
+      if (userCheck.rows.length === 0) {
+          return null;  
+      }
+
+      const { rows } = await client.query(`
+          DELETE FROM users WHERE id=$1 RETURNING *;
+      `, [userId]);
+
+      return rows[0];  
+  } catch (error) {
+      console.error("Error in deleteUserById:", error);
+      throw error;
   }
 }
 
@@ -328,6 +358,7 @@ async function createPostTag(postId, tagId) {
 }
 
 async function addTagsToPost(postId, tagList) {
+  if(tagList) {return await getPostById(postId)};
   try {
     const createPostTagPromises = tagList.map(
       tag => createPostTag(postId, tag.id)
@@ -370,5 +401,6 @@ module.exports = {
   createTags,
   getAllTags,
   createPostTag,
-  addTagsToPost
+  addTagsToPost,
+  deleteUserById
 }

@@ -11,9 +11,17 @@ apiRouter.use(async (req, res, next) => {
   const prefix = 'Bearer ';
   const auth = req.header('Authorization');
 
+  // Array of paths that don't require an Authorization header
+  const openPaths = ['/api/users/register'];
+
+  // Check if the request path is in the openPaths array
+  if (openPaths.includes(req.path)) {
+    return next();
+  }
+
   if (!auth) {
-    // nothing to see here
-    next();
+    // If not an open path and no auth, proceed without setting req.user
+    return next();
   } else if (auth.startsWith(prefix)) {
     const token = auth.slice(prefix.length);
 
